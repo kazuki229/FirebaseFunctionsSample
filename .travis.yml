@@ -4,6 +4,7 @@ node_js:
 install:
   - npm install -g firebase-tools
   - npm --prefix ./functions/ install
+  - cd ./functions
 script:
   - echo "deploying"
 deploy:
