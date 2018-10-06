@@ -2,6 +2,7 @@ import * as functions from 'firebase-functions';
 import * as httpRequest from 'request';
 import * as jwt from 'jsonwebtoken';
 import * as admin from 'firebase-admin';
+import * as jwksClient from 'jwks-rsa';
 
 if (!admin.apps.length) {
   admin.initializeApp();
@@ -12,7 +13,6 @@ if (!admin.apps.length) {
 //
 export const issueToken = functions.https.onRequest((request, response) => {
   const code = request.query.code;
-  console.log(functions.config());
   // TODO: fetch token endpoint from well-known endpoint
   const options = {
     'url': 'https://auth.login.yahoo.co.jp/yconnect/v2/token',
@@ -33,20 +33,36 @@ export const issueToken = functions.https.onRequest((request, response) => {
     const idToken: string = json.id_token;
 
     // TODO: verify IDToken
-    const decoded = jwt.decode(idToken);
+    const verifyOptions = {
+      'algorithm': 'RS256',
+      'audience': functions.config().yahoojapan.client_id,
+      'issuer': 'https://auth.login.yahoo.co.jp/yconnect/v2'
+    }
 
-    const uid = 'yahoojapan:' + decoded['sub'];
-    admin.auth().createCustomToken(uid)
-    .then(function(customToken) {
-      const returnJson = {
-        'token': customToken
-      }
-      response.contentType('application/json');
-      response.send(JSON.stringify(returnJson));
-    })
-    .catch(function(createCustomTokenError) {
-      // TODO: error handling
-      console.log(createCustomTokenError);
-    })
+    const client = jwksClient({
+      jwksUri: 'https://auth.login.yahoo.co.jp/yconnect/v2/jwks'
+    });
+
+    const decoded = jwt.decode(idToken, {complete: true});
+
+    client.getSigningKey(decoded['header']['kid'], function(getSigningKeyError, key) {
+      const signingKey = key.rsaPublicKey;
+
+      jwt.verify(idToken, signingKey, verifyOptions, function(verifyError, jwtDecoded) {
+        // TODO: error handling
+        const uid = 'yahoojapan:' + jwtDecoded['sub'];
+        admin.auth().createCustomToken(uid)
+        .then(function(customToken) {
+          const returnJson = {
+            'token': customToken
+          }
+          response.contentType('application/json');
+          response.send(JSON.stringify(returnJson));
+        })
+        .catch(function(createCustomTokenError) {
+          // TODO: error handling
+        })
+      });
+    });
   })
 });
