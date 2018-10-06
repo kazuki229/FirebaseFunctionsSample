@@ -10,3 +10,6 @@ deploy:
   provider: firebase
   token:
     secure: $FIREBASE_TOKEN
+cache:
+  directories:
+    - "node_modules"
