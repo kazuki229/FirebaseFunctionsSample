@@ -11,9 +11,9 @@ if (!admin.apps.length) {
 // // https://firebase.google.com/docs/functions/typescript
 //
 export const issueToken = functions.https.onRequest((request, response) => {
-  var code = request.query.code;
+  const code = request.query.code;
 
-  var options = {
+  const options = {
     'url': 'https://auth.login.yahoo.co.jp/yconnect/v2/token',
     'method': 'POST',
     'form': {
@@ -25,22 +25,22 @@ export const issueToken = functions.https.onRequest((request, response) => {
   };
 
   httpRequest(options, function(error, httpResponse, body) {
-    var json = JSON.parse(body);
-    var idToken: string = json.id_token;
+    const json = JSON.parse(body);
+    const idToken: string = json.id_token;
 
-    var decoded = jwt.decode(idToken);
+    const decoded = jwt.decode(idToken);
 
-    var uid = 'yahoojapan:' + decoded['sub'];
+    const uid = 'yahoojapan:' + decoded['sub'];
     admin.auth().createCustomToken(uid)
     .then(function(customToken) {
-      var returnJson = {
+      const returnJson = {
         'token': customToken
       }
       response.contentType('application/json');
       response.send(JSON.stringify(returnJson));
     })
-    .catch(function(error) {
-
+    .catch(function(createCustomTokenError) {
+      console.log(createCustomTokenError);
     })
   })
 });
