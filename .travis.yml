@@ -1,10 +1,11 @@
 language: node_js
 node_js:
   - 10.6.0
+before_script:
+  - export PATH=./functions/node_modules/.bin:$PATH
 install:
   - npm install -g firebase-tools
   - npm --prefix ./functions/ install
-  - cd ./functions
 script:
   - echo "deploying"
 deploy:
