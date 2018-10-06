@@ -12,22 +12,27 @@ if (!admin.apps.length) {
 //
 export const issueToken = functions.https.onRequest((request, response) => {
   const code = request.query.code;
-
+  console.log(functions.config());
+  // TODO: fetch token endpoint from well-known endpoint
   const options = {
     'url': 'https://auth.login.yahoo.co.jp/yconnect/v2/token',
     'method': 'POST',
     'form': {
       'grant_type': 'authorization_code',
-      'redirect_uri': process.env.YAHOOJAPAN_REDIRECT_URI,
+      'redirect_uri': functions.config().yahoojapan.redirect_uri,
       'code': code,
-      'client_id': process.env.YAHOOJAPAN_CLIENT_ID
+      'client_id': functions.config().yahoojapan.client_id
     }
   };
 
   httpRequest(options, function(error, httpResponse, body) {
+    // TODO: error handling
     const json = JSON.parse(body);
+
+    // TODO: error handling for empty id_token
     const idToken: string = json.id_token;
 
+    // TODO: verify IDToken
     const decoded = jwt.decode(idToken);
 
     const uid = 'yahoojapan:' + decoded['sub'];
@@ -40,6 +45,7 @@ export const issueToken = functions.https.onRequest((request, response) => {
       response.send(JSON.stringify(returnJson));
     })
     .catch(function(createCustomTokenError) {
+      // TODO: error handling
       console.log(createCustomTokenError);
     })
   })
