@@ -1,5 +1,5 @@
 import * as functions from 'firebase-functions';
-import * as httpRequest from 'request';
+import * as rp from 'request-promise';
 import * as jwt from 'jsonwebtoken';
 import * as admin from 'firebase-admin';
 import * as jwksClient from 'jwks-rsa';
@@ -11,7 +11,7 @@ if (!admin.apps.length) {
 // // Start writing Firebase Functions
 // // https://firebase.google.com/docs/functions/typescript
 //
-export const issueToken = functions.https.onRequest((request, response) => {
+export const issueToken = functions.https.onRequest(async (request, response) => {
   const code = request.query.code;
   // TODO: fetch token endpoint from well-known endpoint
   const options = {
@@ -25,44 +25,68 @@ export const issueToken = functions.https.onRequest((request, response) => {
     }
   };
 
-  httpRequest(options, function(error, httpResponse, body) {
+  const rpResponse = await rp(options).catch(error => {
     // TODO: error handling
-    const json = JSON.parse(body);
+    console.log(error);
+  });
 
-    // TODO: error handling for empty id_token
-    const idToken: string = json.id_token;
+  const json = JSON.parse(rpResponse);
+  // TODO: error handling for empty id_token
+  const idToken: string = json.id_token;
 
-    // TODO: verify IDToken
-    const verifyOptions = {
-      'algorithm': 'RS256',
-      'audience': functions.config().yahoojapan.client_id,
-      'issuer': 'https://auth.login.yahoo.co.jp/yconnect/v2'
-    }
+  const client = jwksClient({
+    jwksUri: 'https://auth.login.yahoo.co.jp/yconnect/v2/jwks'
+  });
 
-    const client = jwksClient({
-      jwksUri: 'https://auth.login.yahoo.co.jp/yconnect/v2/jwks'
-    });
+  const decoded = jwt.decode(idToken, { complete: true });
 
-    const decoded = jwt.decode(idToken, {complete: true});
+  const key = await getSigningKey(client, decoded['header']['kid']).catch(error => {
+    // TODO: error handling
+    console.log(error);
+  });
 
-    client.getSigningKey(decoded['header']['kid'], function(getSigningKeyError, key) {
-      const signingKey = key.rsaPublicKey;
+  const verifyOptions = {
+    'algorithm': 'RS256',
+    'audience': functions.config().yahoojapan.client_id,
+    'issuer': 'https://auth.login.yahoo.co.jp/yconnect/v2'
+  }
 
-      jwt.verify(idToken, signingKey, verifyOptions, function(verifyError, jwtDecoded) {
-        // TODO: error handling
-        const uid = 'yahoojapan:' + jwtDecoded['sub'];
-        admin.auth().createCustomToken(uid)
-        .then(function(customToken) {
-          const returnJson = {
-            'token': customToken
-          }
-          response.contentType('application/json');
-          response.send(JSON.stringify(returnJson));
-        })
-        .catch(function(createCustomTokenError) {
-          // TODO: error handling
-        })
-      });
-    });
-  })
+  const jwtDecoded = await verify(idToken, key, verifyOptions).catch(error => {
+    // TODO: error handling
+    console.log(error);
+  });
+
+  const uid = 'yahoojapan:' + jwtDecoded['sub'];
+  const customToken = await admin.auth().createCustomToken(uid).catch(error => {
+    // TODO: error handling
+    console.log(error);
+  });
+
+  response.contentType('application/json');
+  response.send(JSON.stringify({
+    'token': customToken
+  }));
 });
+
+const getSigningKey = (client: jwksClient.JwksClient, kid: string): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    client.getSigningKey(kid, (error, key) => {
+      if (error) {
+        return reject(error);
+      }
+      const signingKey = key.publicKey || key.rsaPublicKey;
+      return resolve(signingKey);
+    });
+  });
+};
+
+const verify = (idToken, signingKey, verifyOptions): Promise<string | object> => {
+  return new Promise((resolve, reject) => {
+    jwt.verify(idToken, signingKey, verifyOptions, (error, decoded) => {
+      if (error) {
+        return reject(error);
+      }
+      return resolve(decoded);
+    });
+  });
+}
