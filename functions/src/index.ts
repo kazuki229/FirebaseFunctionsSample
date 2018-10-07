@@ -8,6 +8,31 @@ if (!admin.apps.length) {
   admin.initializeApp();
 }
 
+const getSigningKey = (client: jwksClient.JwksClient, kid: string): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    client.getSigningKey(kid, (error, key) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      const signingKey = key.publicKey || key.rsaPublicKey;
+      resolve(signingKey);
+    });
+  });
+};
+
+const verify = (idToken, signingKey, verifyOptions): Promise<string | object> => {
+  return new Promise((resolve, reject) => {
+    jwt.verify(idToken, signingKey, verifyOptions, (error, decoded) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(decoded);
+    });
+  });
+}
+
 // // Start writing Firebase Functions
 // // https://firebase.google.com/docs/functions/typescript
 //
@@ -67,26 +92,3 @@ export const issueToken = functions.https.onRequest(async (request, response) =>
     'token': customToken
   }));
 });
-
-const getSigningKey = (client: jwksClient.JwksClient, kid: string): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    client.getSigningKey(kid, (error, key) => {
-      if (error) {
-        return reject(error);
-      }
-      const signingKey = key.publicKey || key.rsaPublicKey;
-      return resolve(signingKey);
-    });
-  });
-};
-
-const verify = (idToken, signingKey, verifyOptions): Promise<string | object> => {
-  return new Promise((resolve, reject) => {
-    jwt.verify(idToken, signingKey, verifyOptions, (error, decoded) => {
-      if (error) {
-        return reject(error);
-      }
-      return resolve(decoded);
-    });
-  });
-}
