@@ -41,30 +41,28 @@ function verify(idToken: string, signingKey: string | Buffer, verifyOptions: jwt
  *
  * @returns {Promise<UserRecord>} The Firebase user record in a promise.
  */
-function getFirebaseUser(uid, accessToken) {
-  const getProfileOptions = {
-    url: 'https://userinfo.yahooapis.jp/yconnect/v2/attribute',
-    headers: {
-      Authorization: 'Bearer ' + accessToken
-    },
-  }
-
-  return admin.auth().getUser(uid).catch(error => {
+async function getFirebaseUser(uid, accessToken, openidConfiguration) {
+  return admin.auth().getUser(uid).catch(async error => {
     if (error.code === 'auth/user-not-found') {
-      return rp(getProfileOptions).then(response => {
-        const json = JSON.parse(response)
-        const displayName: string = json.nickname
-        const photoURL: string = json.picture
-        const email: string = json.email
-        const emailVerified: boolean = json.email_verified
-        // Create a new Firebase user with Yahoo! JAPAN profile and return it
-        return admin.auth().createUser({
-          uid: uid,
-          displayName: displayName,
-          photoURL: photoURL,
-          email: email,
-          emailVerified: emailVerified
-        })
+      const response = await rp({
+        url: openidConfiguration.userinfo_endpoint,
+        headers: {
+          Authorization: 'Bearer ' + accessToken
+        },
+        json: true,
+      })
+
+      const displayName: string = response.nickname
+      const photoURL: string = response.picture
+      const email: string = response.email
+      const emailVerified: boolean = response.email_verified
+
+      return admin.auth().createUser({
+        uid: uid,
+        displayName: displayName,
+        photoURL: photoURL,
+        email: email,
+        emailVerified: emailVerified
       })
     }
     // If error other than auth/user-not-found occurred, fail the whole login process
@@ -115,18 +113,17 @@ export const issueToken = functions.https.onRequest(async (request, response) =>
   // - If a nonce value was sent in the Authentication Request, a nonce Claim MUST be present and its value checked to verify that it is the same value as the one that was sent in the Authentication Request. The Client SHOULD check the nonce value for replay attacks. The precise method for detecting replay attacks is Client specific.
 
   const idToken: string = tokenResponse.id_token
-
-  const client: jwksClient.JwksClient = jwksClient({
-    jwksUri: openidConfiguration.jwks_uri
-  })
-
   const decoded = jwt.decode(idToken, { complete: true })
 
   if (decoded['header']['alg'] !== 'RS256') {
     console.log('alg is not RS256')
   }
 
-  const key: string = await getSigningKey(client, decoded['header']['kid']).catch(error => {
+  const jwksClientObj: jwksClient.JwksClient = jwksClient({
+    jwksUri: openidConfiguration.jwks_uri
+  })
+
+  const key: string = await getSigningKey(jwksClientObj, decoded['header']['kid']).catch(error => {
     // TODO: error handling
     console.log(error)
     return '';
@@ -156,9 +153,10 @@ export const issueToken = functions.https.onRequest(async (request, response) =>
   }
 
   const uid = 'yahoojapan:' + jwtDecoded['sub']
-  const user: admin.auth.UserRecord = await getFirebaseUser(uid, tokenResponse.access_token).catch(error => {
+  const user: admin.auth.UserRecord = await getFirebaseUser(uid, tokenResponse.access_token, openidConfiguration).catch(error => {
     // TODO: error handling
     console.log(error)
+    return null
   })
   console.log(user)
 
