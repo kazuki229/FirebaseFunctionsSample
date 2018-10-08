@@ -137,8 +137,6 @@ export const issueToken = functions.https.onRequest(async (request, response) =>
 
   // Access Token Validation(http://openid.net/specs/openid-connect-core-1_0.html#CodeFlowTokenValidation)
   const hash = crypto.createHash('sha256')
-  const decodeAccessToken = base64url.toBuffer(json.access_token)
-
   hash.update(json.access_token)
   const hashedAccessToken = hash.digest()
   const halfOfAccessToken = hashedAccessToken.slice(0, hashedAccessToken.length / 2)
