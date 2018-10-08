@@ -11,7 +11,7 @@ if (!admin.apps.length) {
 }
 
 function getSigningKey(client: jwksClient.JwksClient, kid: string): Promise<string> {
-  return new Promise((resolve, reject) => {
+  return new Promise<string>((resolve, reject) => {
     client.getSigningKey(kid, (error, key) => {
       if (error) {
         reject(error)
@@ -23,8 +23,8 @@ function getSigningKey(client: jwksClient.JwksClient, kid: string): Promise<stri
   })
 }
 
-function verify(idToken, signingKey, verifyOptions): Promise<string | object> {
-  return new Promise((resolve, reject) => {
+function verify(idToken: string, signingKey: string | Buffer, verifyOptions: jwt.VerifyOptions): Promise<string | object> {
+  return new Promise<string | object>((resolve, reject) => {
     jwt.verify(idToken, signingKey, verifyOptions, (error, decoded) => {
       if (error) {
         reject(error)
@@ -79,17 +79,18 @@ export const issueToken = functions.https.onRequest(async (request, response) =>
   const code = request.query.code
   // TODO: fetch token endpoint from well-known endpoint
   const options = {
-    'url': 'https://auth.login.yahoo.co.jp/yconnect/v2/token',
-    'method': 'POST',
-    'form': {
-      'grant_type': 'authorization_code',
-      'redirect_uri': functions.config().yahoojapan.redirect_uri,
-      'code': code,
-      'client_id': functions.config().yahoojapan.client_id
-    }
+    url: 'https://auth.login.yahoo.co.jp/yconnect/v2/token',
+    method: 'POST',
+    form: {
+      grant_type: 'authorization_code',
+      redirect_uri: functions.config().yahoojapan.redirect_uri,
+      code: code,
+      client_id: functions.config().yahoojapan.client_id
+    },
+    json: true
   }
 
-  const rpResponse = await rp(options).catch(error => {
+  const tokenResponse = await rp(options).catch(error => {
     // TODO: error handling
     console.log(error)
   })
@@ -97,21 +98,21 @@ export const issueToken = functions.https.onRequest(async (request, response) =>
   // Token Response Validation
   // http://openid.net/specs/openid-connect-core-1_0.html#TokenResponseValidation
   // 1. RFC6749
-  // 1.1 https://tools.ietf.org/html/rfc6749#section-5.1
+  // nothing to do
 
-  const json = JSON.parse(rpResponse)
   // TODO: error handling for empty id_token
-  const idToken: string = json.id_token
+  const idToken: string = tokenResponse.id_token
 
-  const client = jwksClient({
+  const client: jwksClient.JwksClient = jwksClient({
     jwksUri: 'https://auth.login.yahoo.co.jp/yconnect/v2/jwks'
   })
 
   const decoded = jwt.decode(idToken, { complete: true })
 
-  const key = await getSigningKey(client, decoded['header']['kid']).catch(error => {
+  const key: string = await getSigningKey(client, decoded['header']['kid']).catch(error => {
     // TODO: error handling
     console.log(error)
+    return '';
   })
 
   // ID Token Validation(https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation)
@@ -126,8 +127,7 @@ export const issueToken = functions.https.onRequest(async (request, response) =>
   const verifyOptions = {
     algorithm: 'RS256',
     audience: functions.config().yahoojapan.client_id,
-    issuer: 'https://auth.login.yahoo.co.jp/yconnect/v2',
-    maxAge: 30000
+    issuer: 'https://auth.login.yahoo.co.jp/yconnect/v2'
   }
 
   const jwtDecoded = await verify(idToken, key, verifyOptions).catch(error => {
@@ -137,7 +137,7 @@ export const issueToken = functions.https.onRequest(async (request, response) =>
 
   // Access Token Validation(http://openid.net/specs/openid-connect-core-1_0.html#CodeFlowTokenValidation)
   const hash = crypto.createHash('sha256')
-  hash.update(json.access_token)
+  hash.update(tokenResponse.access_token)
   const hashedAccessToken = hash.digest()
   const halfOfAccessToken = hashedAccessToken.slice(0, hashedAccessToken.length / 2)
   const atHashFromAccessToken = base64url(halfOfAccessToken)
@@ -148,7 +148,7 @@ export const issueToken = functions.https.onRequest(async (request, response) =>
   }
 
   const uid = 'yahoojapan:' + jwtDecoded['sub']
-  const user: admin.auth.UserRecord = await getFirebaseUser(uid, json.access_token).catch(error => {
+  const user: admin.auth.UserRecord = await getFirebaseUser(uid, tokenResponse.access_token).catch(error => {
     // TODO: error handling
     console.log(error)
   })
