@@ -52,17 +52,12 @@ async function getFirebaseUser(uid, accessToken, openidConfiguration) {
         json: true,
       })
 
-      const displayName: string = response.nickname
-      const photoURL: string = response.picture
-      const email: string = response.email
-      const emailVerified: boolean = response.email_verified
-
       return admin.auth().createUser({
         uid: uid,
-        displayName: displayName,
-        photoURL: photoURL,
-        email: email,
-        emailVerified: emailVerified
+        displayName: response.nickname as string,
+        photoURL: response.picture as string,
+        email: response.email as string,
+        emailVerified: response.email_verified as boolean
       })
     }
     // If error other than auth/user-not-found occurred, fail the whole login process
@@ -160,11 +155,10 @@ export const issueToken = functions.https.onRequest(async (request, response) =>
   })
   console.log(user)
 
-  const customToken = await admin.auth().createCustomToken(user.uid)
-    .catch(error => {
-      // TODO: error handling
-      console.log(error)
-    })
+  const customToken = await admin.auth().createCustomToken(user.uid).catch(error => {
+    // TODO: error handling
+    console.log(error)
+  })
 
   response.contentType('application/json')
   response.send(JSON.stringify({
