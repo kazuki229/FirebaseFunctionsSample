@@ -77,9 +77,17 @@ function getFirebaseUser(uid, accessToken) {
 //
 export const issueToken = functions.https.onRequest(async (request, response) => {
   const code = request.query.code
-  // TODO: fetch token endpoint from well-known endpoint
+
+  const openidConfiguration = await rp({
+    url: 'https://auth.login.yahoo.co.jp/yconnect/v2/.well-known/openid-configuration',
+    method: 'GET',
+    json: true
+  }).catch(error => {
+    console.log(error)
+  })
+
   const options = {
-    url: 'https://auth.login.yahoo.co.jp/yconnect/v2/token',
+    url: openidConfiguration.token_endpoint,
     method: 'POST',
     form: {
       grant_type: 'authorization_code',
@@ -97,17 +105,26 @@ export const issueToken = functions.https.onRequest(async (request, response) =>
 
   // Token Response Validation
   // http://openid.net/specs/openid-connect-core-1_0.html#TokenResponseValidation
-  // 1. RFC6749
-  // nothing to do
+  // ID Token Validation(https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation)
+  // - The Issuer Identifier for the OpenID Provider (which is typically obtained during Discovery) MUST exactly match the value of the iss (issuer) Claim.
+  // - The Client MUST validate that the aud (audience) Claim contains its client_id value registered at the Issuer identified by the iss (issuer) Claim as an audience. The aud (audience) Claim MAY contain an array with more than one element. The ID Token MUST be rejected if the ID Token does not list the Client as a valid audience, or if it contains additional audiences not trusted by the Client.
+  // - If the ID Token is received via direct communication between the Client and the Token Endpoint (which it is in this flow), the TLS server validation MAY be used to validate the issuer in place of checking the token signature. The Client MUST validate the signature of all other ID Tokens according to JWS [JWS] using the algorithm specified in the JWT alg Header Parameter. The Client MUST use the keys provided by the Issuer.
+  // - The alg value SHOULD be the default of RS256 or the algorithm sent by the Client in the id_token_signed_response_alg parameter during Registration.
+  // - The current time MUST be before the time represented by the exp Claim.
+  // - The iat Claim can be used to reject tokens that were issued too far away from the current time, limiting the amount of time that nonces need to be stored to prevent attacks. The acceptable range is Client specific.
+  // - If a nonce value was sent in the Authentication Request, a nonce Claim MUST be present and its value checked to verify that it is the same value as the one that was sent in the Authentication Request. The Client SHOULD check the nonce value for replay attacks. The precise method for detecting replay attacks is Client specific.
 
-  // TODO: error handling for empty id_token
   const idToken: string = tokenResponse.id_token
 
   const client: jwksClient.JwksClient = jwksClient({
-    jwksUri: 'https://auth.login.yahoo.co.jp/yconnect/v2/jwks'
+    jwksUri: openidConfiguration.jwks_uri
   })
 
   const decoded = jwt.decode(idToken, { complete: true })
+
+  if (decoded['header']['alg'] !== 'RS256') {
+    console.log('alg is not RS256')
+  }
 
   const key: string = await getSigningKey(client, decoded['header']['kid']).catch(error => {
     // TODO: error handling
@@ -115,19 +132,10 @@ export const issueToken = functions.https.onRequest(async (request, response) =>
     return '';
   })
 
-  // ID Token Validation(https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation)
-  // - The Issuer Identifier for the OpenID Provider (which is typically obtained during Discovery) MUST exactly match the value of the iss (issuer) Claim.
-  // - The Client MUST validate that the aud (audience) Claim contains its client_id value registered at the Issuer identified by the iss (issuer) Claim as an audience. The aud (audience) Claim MAY contain an array with more than one element. The ID Token MUST be rejected if the ID Token does not list the Client as a valid audience, or if it contains additional audiences not trusted by the Client.
-  // - If the ID Token is received via direct communication between the Client and the Token Endpoint (which it is in this flow), the TLS server validation MAY be used to validate the issuer in place of checking the token signature. The Client MUST validate the signature of all other ID Tokens according to JWS [JWS] using the algorithm specified in the JWT alg Header Parameter. The Client MUST use the keys provided by the Issuer.
-  // - The alg value SHOULD be the default of RS256 or the algorithm sent by the Client in the id_token_signed_response_alg parameter during Registration.
-  // TODO check alg
-  // - The current time MUST be before the time represented by the exp Claim.
-  // - The iat Claim can be used to reject tokens that were issued too far away from the current time, limiting the amount of time that nonces need to be stored to prevent attacks. The acceptable range is Client specific.
-  // - If a nonce value was sent in the Authentication Request, a nonce Claim MUST be present and its value checked to verify that it is the same value as the one that was sent in the Authentication Request. The Client SHOULD check the nonce value for replay attacks. The precise method for detecting replay attacks is Client specific.
   const verifyOptions = {
     algorithm: 'RS256',
     audience: functions.config().yahoojapan.client_id,
-    issuer: 'https://auth.login.yahoo.co.jp/yconnect/v2'
+    issuer: openidConfiguration.issuer
   }
 
   const jwtDecoded = await verify(idToken, key, verifyOptions).catch(error => {
