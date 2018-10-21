@@ -5,6 +5,7 @@ import * as admin from 'firebase-admin'
 import * as jwksClient from 'jwks-rsa'
 import * as crypto from 'crypto'
 import * as base64url from 'base64url'
+import * as secureRandom from 'secure-random'
 
 if (!admin.apps.length) {
   admin.initializeApp()
@@ -163,5 +164,14 @@ export const issueToken = functions.https.onRequest(async (request, response) =>
   response.contentType('application/json')
   response.send(JSON.stringify({
     'token': customToken
+  }))
+})
+
+export const generateNonce = functions.https.onRequest(async (request, response) => {
+  const bytes = secureRandom(32, { type: 'Buffer' })
+  const encoded = base64url(bytes)
+  response.contentType('application/json')
+  response.send(JSON.stringify({
+    'nonce': encoded
   }))
 })
