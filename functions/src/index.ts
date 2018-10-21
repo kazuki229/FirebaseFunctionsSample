@@ -170,6 +170,16 @@ export const issueToken = functions.https.onRequest(async (request, response) =>
 export const generateNonce = functions.https.onRequest(async (request, response) => {
   const bytes = secureRandom(32, { type: 'Buffer' })
   const encoded = base64url(bytes)
+  const firestore = admin.firestore()
+  firestore.settings({ timestampsInSnapshots: true })
+  const docRef = firestore.collection('nonce').doc(encoded)
+  const date = new Date()
+  await docRef.set({
+    created_at: date.getTime()
+  }).catch(error => {
+    console.log(error)
+  })
+
   response.contentType('application/json')
   response.send(JSON.stringify({
     'nonce': encoded
