@@ -71,6 +71,7 @@ async function getFirebaseUser(uid, accessToken, openidConfiguration) {
 //
 export const issueToken = functions.https.onRequest(async (request, response) => {
   const code = request.query.code
+  const nonce = request.query.nonce
 
   const openidConfiguration = await rp({
     url: 'https://auth.login.yahoo.co.jp/yconnect/v2/.well-known/openid-configuration',
@@ -148,6 +149,10 @@ export const issueToken = functions.https.onRequest(async (request, response) =>
     return
   }
 
+  if (jwtDecoded['nonce'] !== nonce) {
+    console.log('error')
+  }
+
   const uid = 'yahoojapan:' + jwtDecoded['sub']
   const user: admin.auth.UserRecord = await getFirebaseUser(uid, tokenResponse.access_token, openidConfiguration).catch(error => {
     // TODO: error handling
@@ -158,6 +163,12 @@ export const issueToken = functions.https.onRequest(async (request, response) =>
 
   const customToken = await admin.auth().createCustomToken(user.uid).catch(error => {
     // TODO: error handling
+    console.log(error)
+  })
+  const firestore = admin.firestore()
+  firestore.settings({ timestampsInSnapshots: true })
+  const docRef = firestore.collection('nonce').doc(nonce)
+  await docRef.delete().catch(error => {
     console.log(error)
   })
 
