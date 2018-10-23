@@ -129,7 +129,8 @@ export const issueToken = functions.https.onRequest(async (request, response) =>
   const verifyOptions = {
     algorithm: 'RS256',
     audience: functions.config().yahoojapan.client_id,
-    issuer: openidConfiguration.issuer
+    issuer: openidConfiguration.issuer,
+    maxAge: '600000'
   }
 
   const jwtDecoded = await verify(idToken, key, verifyOptions).catch(error => {
